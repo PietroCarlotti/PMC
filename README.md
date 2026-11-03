@@ -29,7 +29,7 @@ We call a function $c:\mathcal X^K\to\mathcal X$ a **consensus** function if
 
 $$
 c(x,\ldots,x)=x,
-\qquad \forall\thickspace x\in\mathcal X.
+\qquad \forall\text{ }x\in\mathcal X.
 $$
 
 We call a function $d:\mathcal X^K\to\mathbb R^m$ a **discrepancy** function if, for all $x_1,\ldots,x_K\in\mathcal X$,
