@@ -3,24 +3,25 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pmc"
-version = "0.1.0"
-description = "Official Python implementation of PMC."
+name = "product-monte-carlo"
+version = "0.1.11"
+description = "Product Monte Carlo for distributed and federated inference"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["torch"]
-license = { text = "Proprietary" }
-authors = [
-  { name = "Pietro Carlotti" },
-]
+dependencies = ["torch>=2.1,<3"]
+license = { text = "MIT" }
+license-files = ["LICENSE"]
+authors = [{ name = "Pietro Carlotti" }]
+keywords = ["Bayesian inference", "distributed inference", "federated learning", "Monte Carlo", "PyTorch"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
 ]
 
 [project.urls]
