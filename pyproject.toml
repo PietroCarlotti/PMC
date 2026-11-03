@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "product-monte-carlo"
-version = "0.1.11"
+version = "0.1.12"
 description = "Product Monte Carlo for distributed and federated inference"
 readme = "README.md"
 requires-python = ">=3.10"
