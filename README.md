@@ -4,16 +4,13 @@ PMC estimates expectations under a product of densities. To see how, consider th
 
 Suppose you can draw samples independently from $K$ distributions on $\mathcal X\subseteq\mathbb R^p$:
 
-<div>
 $$
 X_k \overset{\text{ind.}}{\sim} \pi_k,
 \qquad k=1,\ldots,K.
 $$
-</div>
 
 We define the **product distribution** $\pi^\star$ as follows:
 
-<div>
 $$
 \pi^\star(x)
 =
@@ -23,42 +20,33 @@ $$
 \prod\limits_{k=1}^{K}\pi_k(x),
 \qquad \forall\; x\in\mathcal X.
 $$
-</div>
 
 Given a function $h:\mathcal X\to\mathbb R$, we wish to compute its expectation under $\pi^\star$:
 
-<div>
 $$
 \mathbb E_{X\sim\pi^\star}[h(X)] = \int_{\mathcal X}h(x)\,\pi^\star(x)\,\mathrm{d}x.
 $$
-</div>
 
 We call a function $c:\mathcal X^K\to\mathcal X$ a **consensus** function if
 
-<div>
 $$
 c(x,\ldots,x)=x,
 \qquad \forall\; x\in\mathcal X.
 $$
-</div>
 
 We call a function $d:\mathcal X^K\to\mathbb R^m$ a **discrepancy** function if, for all $x_1,\ldots,x_K\in\mathcal X$,
 
-<div>
 $$
 d(x_1,\ldots,x_K)=\mathbf 0
 \quad\Longleftrightarrow\quad
 x_1=\cdots=x_K.
 $$
-</div>
 
 Let $C=c(X_1,\ldots,X_K)$ and $D=d(X_1,\ldots,X_K)$. Then, under suitable regularity conditions, we have that
 
-<div>
 $$
 \mathbb E_{X\sim\pi^\star}[h(X)] = \mathbb E[h(C)\mid D=\mathbf 0_m].
 $$
-</div>
 
 PMC then works as follows:
 
