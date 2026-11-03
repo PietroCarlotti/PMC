@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "product-monte-carlo"
 version = "0.1.13"
-description = "Product Monte Carlo for distributed and federated inference"
+description = "Product Monte Carlo: Expectation Under a Product of Densities"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["torch>=2.1,<3"]
