@@ -1,12 +1,101 @@
-# PMC
+# Product Monte Carlo (PMC)
 
-Official Python implementation of PMC.
+PMC estimates expectations under a product of densities. To see how, consider the following setup.
 
-> This package is under active development; its public API is not yet stable.
+Suppose you can draw samples independently from $K$ distributions on $\mathcal X\subseteq\mathbb R^p$:
 
-## Development
+<div>
+$$
+X_k \overset{\text{ind.}}{\sim} \pi_k,
+\qquad k=1,\ldots,K.
+$$
+</div>
+
+We define the **product distribution** $\pi^\star$ as follows:
+
+<div>
+$$
+\pi^\star(x)
+=
+\frac{\prod\limits_{k=1}^{K}\pi_k(x)}
+{\int_{\mathcal X}\prod\limits_{k=1}^{K}\pi_k(u)\,du}
+\propto
+\prod\limits_{k=1}^{K}\pi_k(x),
+\qquad \forall\; x\in\mathcal X.
+$$
+</div>
+
+Given a function $h:\mathcal X\to\mathbb R$, we wish to compute its expectation under $\pi^\star$:
+
+<div>
+$$
+\mathbb E_{X\sim\pi^\star}[h(X)] = \int_{\mathcal X}h(x)\,\pi^\star(x)\,\mathrm{d}x.
+$$
+</div>
+
+We call a function $c:\mathcal X^K\to\mathcal X$ a **consensus** function if
+
+<div>
+$$
+c(x,\ldots,x)=x,
+\qquad \forall\; x\in\mathcal X.
+$$
+</div>
+
+We call a function $d:\mathcal X^K\to\mathbb R^m$ a **discrepancy** function if, for all $x_1,\ldots,x_K\in\mathcal X$,
+
+<div>
+$$
+d(x_1,\ldots,x_K)=\mathbf 0
+\quad\Longleftrightarrow\quad
+x_1=\cdots=x_K.
+$$
+</div>
+
+Let $C=c(X_1,\ldots,X_K)$ and $D=d(X_1,\ldots,X_K)$. Then, under suitable regularity conditions, we have that
+
+<div>
+$$
+\mathbb E_{X\sim\pi^\star}[h(X)] = \mathbb E[h(C)\mid D=\mathbf 0_m].
+$$
+</div>
+
+PMC then works as follows:
+
+1. Draw $S$ independent samples per distribution.
+2. For each set of $K$ draws, compute its consensus $C$ and discrepancy $D$.
+3. Fit a regressor to predict $h(C)$ from $D$.
+4. Estimate the target expectation by evaluating the fitted regressor at $D=\mathbf 0_m$.
+
+## Install
+
+To install PMC from PyPI, run:
 
 ```bash
-python -m pip install --editable .
+pip install product-monte-carlo
 ```
 
+## Example
+
+The example below shows how to estimate an expectation with PMC.
+
+```python
+# Import PyTorch and PMC classes
+import torch
+from pmc import AnchoredDifferences, Mean, OLS, PMC
+
+# Draw S = 1,000 samples from K = 2 univariate standard Gaussian distributions (p = 1)
+samples = torch.randn(1_000, 2, 1)
+
+# Configure PMC to estimate the mean under the product distribution
+PMC_estimator = PMC(
+    consensus=Mean(),
+    discrepancy=AnchoredDifferences(),
+    h=lambda x: x,
+    regressor=OLS(),
+)
+
+# Compute and print the resulting estimate
+PMC_estimate = PMC_estimator.estimate(samples)
+print(PMC_estimate)
+```
