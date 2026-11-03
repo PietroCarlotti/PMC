@@ -14,7 +14,7 @@ We define the **product distribution** $\pi^\star$ as follows:
 $$
 \pi^\star(x) =
 \frac{\prod_{k=1}^{K}\pi_k(x)}
-{\int_{\mathcal X} \prod_{k=1}^{K}\pi_k(u)\,\mathrm{d}u}
+{\int_{\mathcal X} \prod_{k=1}^{K}\pi_k(u) \mathrm{d}u}
 \propto \prod_{k=1}^{K}\pi_k(x),
 \qquad \forall x \in \mathcal X.
 $$
@@ -22,14 +22,14 @@ $$
 Given a function $h:\mathcal X\to\mathbb R$, we wish to compute its expectation under $\pi^\star$:
 
 $$
-\mathbb E_{X\sim\pi^\star}[h(X)] = \int_{\mathcal X}h(x)\,\pi^\star(x)\,\mathrm{d}x.
+\mathbb E_{X\sim\pi^\star}[h(X)] = \int_{\mathcal X} h(x) \pi^\star(x) \mathrm{d}x.
 $$
 
 We call a function $c:\mathcal X^K\to\mathcal X$ a **consensus** function if
 
 $$
 c(x,\ldots,x)=x,
-\qquad \forall\; x\in\mathcal X.
+\qquad \forall x \in \mathcal X.
 $$
 
 We call a function $d:\mathcal X^K\to\mathbb R^m$ a **discrepancy** function if, for all $x_1,\ldots,x_K\in\mathcal X$,
