@@ -12,13 +12,11 @@ $$
 We define the **product distribution** $\pi^\star$ as follows:
 
 $$
-\pi^\star(x)
-=
-\frac{\prod\limits_{k=1}^{K}\pi_k(x)}
-{\int_{\mathcal X}\prod\limits_{k=1}^{K}\pi_k(u)\,du}
-\propto
-\prod\limits_{k=1}^{K}\pi_k(x),
-\qquad \forall\; x\in\mathcal X.
+\pi^\star(x) =
+\frac{\prod_{k=1}^{K}\pi_k(x)}
+{\int_{\mathcal X} \prod_{k=1}^{K}\pi_k(u)\,\mathrm{d}u}
+\propto \prod_{k=1}^{K}\pi_k(x),
+\qquad \forall x \in \mathcal X.
 $$
 
 Given a function $h:\mathcal X\to\mathbb R$, we wish to compute its expectation under $\pi^\star$:
