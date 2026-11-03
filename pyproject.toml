@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Official Python implementation of PMC."
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = ["torch"]
 license = { text = "Proprietary" }
 authors = [
   { name = "Pietro Carlotti" },
