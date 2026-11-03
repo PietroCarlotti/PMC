@@ -74,7 +74,7 @@ from pmc import AnchoredDifferences, Mean, OLS, PMC
 samples = torch.randn(1_000, 2, 1)
 
 # Configure PMC to estimate the mean under the product distribution
-PMC_estimator = PMC(
+pmc_estimator = PMC(
     consensus=Mean(),
     discrepancy=AnchoredDifferences(),
     h=lambda x: x,
@@ -82,6 +82,6 @@ PMC_estimator = PMC(
 )
 
 # Compute and print the resulting estimate
-PMC_estimate = PMC_estimator.estimate(samples)
-print(PMC_estimate)
+pmc_estimate = pmc_estimator.estimate(samples)
+print(pmc_estimate)
 ```
