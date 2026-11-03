@@ -7,7 +7,6 @@ Official Python implementation of PMC.
 ## Development
 
 ```bash
-python -m pip install --editable ".[dev]"
-pytest
+python -m pip install --editable .
 ```
 

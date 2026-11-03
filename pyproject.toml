@@ -22,16 +22,10 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
-
 [project.urls]
 Homepage = "https://github.com/PietroCarlotti/PMC"
 Repository = "https://github.com/PietroCarlotti/PMC"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
 
