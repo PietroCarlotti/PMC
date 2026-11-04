@@ -1,0 +1,10 @@
+Package: PMC
+Title: Product Monte Carlo
+Version: 0.0.0.9000
+Authors@R:
+    person("Pietro", "Carlotti", email = "pietro.carlotti@utexas.edu",
+        role = c("aut", "cre"))
+Description: Estimate expectations under a product of densities using
+    Product Monte Carlo.
+License: MIT + file LICENSE
+Encoding: UTF-8
