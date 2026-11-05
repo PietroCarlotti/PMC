@@ -104,7 +104,7 @@ The same expectation can be estimated with PMC in R.
 
 ```r
 # Load PMC
-library(PMC)
+library(ProductMonteCarlo)
 
 # Draw S = 1,000 samples from K = 2 univariate standard Gaussian distributions (p = 1)
 samples <- array(rnorm(1000 * 2), dim = c(1000, 2, 1))

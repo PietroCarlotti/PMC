@@ -1,4 +1,4 @@
 library(testthat)
-library(PMC)
+library(ProductMonteCarlo)
 
-test_check("PMC")
+test_check("ProductMonteCarlo")
