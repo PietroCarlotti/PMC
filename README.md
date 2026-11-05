@@ -55,15 +55,27 @@ PMC then works as follows:
 
 ## Install
 
-To install PMC from PyPI, run:
+### Python
+
+To install the Python package from PyPI, run:
 
 ```bash
 pip install product-monte-carlo
 ```
 
+### R
+
+To install the R package from GitHub, run:
+
+```r
+remotes::install_github("PietroCarlotti/PMC", subdir = "src/r")
+```
+
 ## Example
 
-The example below shows how to estimate an expectation with PMC.
+### Python
+
+The example below shows how to estimate an expectation with PMC in Python.
 
 ```python
 # Import PyTorch and PMC classes
@@ -83,5 +95,23 @@ pmc_estimator = PMC(
 
 # Compute and print the resulting estimate
 pmc_estimate = pmc_estimator.estimate(samples)
+print(pmc_estimate)
+```
+
+### R
+
+The same expectation can be estimated with PMC in R.
+
+```r
+# Load PMC
+library(PMC)
+
+# Draw S = 1,000 samples from K = 2 univariate standard Gaussian distributions (p = 1)
+samples <- array(rnorm(1000 * 2), dim = c(1000, 2, 1))
+
+# Estimate the mean under the product distribution
+pmc_estimate <- pmc(samples)
+
+# Print the resulting estimate
 print(pmc_estimate)
 ```
