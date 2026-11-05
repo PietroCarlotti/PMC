@@ -2,6 +2,8 @@
 #'
 #' @param samples A numeric array with dimensions c(S, K, p)
 #'
+#' @export
+#'
 #' @return An S by p numeric matrix
 consensus_mean <- function(samples) {
   # Validate samples
@@ -18,6 +20,8 @@ consensus_mean <- function(samples) {
 #'
 #' @param samples A numeric array with dimensions c(S, K, p)
 #' @param weights A numeric array with dimensions c(K, p, p)
+#'
+#' @export
 #'
 #' @return An S by p numeric matrix
 consensus_weighted_average <- function(samples, weights) {

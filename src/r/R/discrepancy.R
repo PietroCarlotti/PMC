@@ -2,6 +2,8 @@
 #'
 #' @param samples A numeric array with dimensions c(S, K, p)
 #'
+#' @export
+#'
 #' @return An S by (K - 1) * p numeric matrix
 discrepancy_anchored_differences <- function(samples) {
   # Validate samples
@@ -13,8 +15,24 @@ discrepancy_anchored_differences <- function(samples) {
   number_of_coordinates <- dimensions[[3L]]
 
   # Subtract the first component from the others
-  differences <- samples[, 2L:number_of_components, , drop = FALSE] -
-    samples[, 1L, , drop = FALSE]
+  anchor <- matrix(
+    samples[, 1L, , drop = FALSE],
+    nrow = number_of_draws,
+    ncol = number_of_coordinates
+  )
+  differences <- array(
+    0,
+    dim = c(number_of_draws, number_of_components - 1L,
+            number_of_coordinates)
+  )
+  for (component in 2L:number_of_components) {
+    component_samples <- matrix(
+      samples[, component, , drop = FALSE],
+      nrow = number_of_draws,
+      ncol = number_of_coordinates
+    )
+    differences[, component - 1L, ] <- component_samples - anchor
+  }
 
   # Flatten the differences with component order before coordinate order
   matrix(
@@ -28,6 +46,8 @@ discrepancy_anchored_differences <- function(samples) {
 #'
 #' @param samples A numeric array with dimensions c(S, K, p)
 #' @param order The norm order, at least 1 or Inf
+#'
+#' @export
 #'
 #' @return An S by 1 numeric matrix
 discrepancy_norm <- function(samples, order = 2) {
