@@ -3,7 +3,9 @@ import math
 import torch
 
 from abc import ABC, abstractmethod
+from cmdstanpy import CmdStanModel
 from numbers import Integral
+from pathlib import Path
 
 class Regressor(ABC):
     """Base class for regressors that learn E[h(C) | D = d]."""
@@ -158,6 +160,98 @@ class OLS(Regressor):
         """Return the intercept, which is the prediction at a zero discrepancy."""
         # At d = 0 the prediction is the intercept
         return self.intercept
+
+
+class GaussianProcess(Regressor):
+    """Gaussian-process regression"""
+
+    # Locate the packaged Stan model
+    _stan_file = Path(__file__).parent / "stan" / "regressor_gaussian_process.stan"
+
+    def __init__(self, chains: int, warmup: int, samples: int, seed: int | None = None):
+        # Check that the chain count is an integer
+        if isinstance(chains, bool) or not isinstance(chains, Integral):
+            raise TypeError("chains must be an integer")
+
+        # Check that the chain count is positive
+        if chains < 1:
+            raise ValueError("chains must be at least 1")
+
+        # Check that the warmup count is an integer
+        if isinstance(warmup, bool) or not isinstance(warmup, Integral):
+            raise TypeError("warmup must be an integer")
+
+        # Check that the warmup count is positive
+        if warmup < 1:
+            raise ValueError("warmup must be at least 1")
+
+        # Check that the sample count is an integer
+        if isinstance(samples, bool) or not isinstance(samples, Integral):
+            raise TypeError("samples must be an integer")
+
+        # Check that the sample count is positive
+        if samples < 1:
+            raise ValueError("samples must be at least 1")
+
+        # Check that the seed is an integer
+        if seed is not None and (isinstance(seed, bool) or not isinstance(seed, Integral)):
+            raise TypeError("seed must be an integer or None")
+
+        # Check that the seed is nonnegative
+        if seed is not None and seed < 0:
+            raise ValueError("seed must be nonnegative or None")
+
+        # Store the Stan sampling configuration
+        self.chains = chains
+        self.warmup = warmup
+        self.samples = samples
+        self.seed = seed
+
+    # Fit the Gaussian process regression through Stan
+    def _fit(self, d: torch.Tensor, c: torch.Tensor) -> None:
+        # Standardize the discrepancies
+        self.d_mean = d.mean(dim=0)
+        self.d_sd = d.std(dim=0, unbiased=False)
+        d = (d - self.d_mean) / self.d_sd
+
+        # Standardize the targets
+        self.c_mean = c.mean(dim=0)
+        self.c_sd = c.std(dim=0, unbiased=False)
+        c = (c - self.c_mean) / self.c_sd
+
+        # Assemble the Stan data
+        data = {
+            "S": d.shape[0],
+            "m": self._m,
+            "r": self._r,
+            "d": d.detach().cpu().numpy(),
+            "c": c.detach().cpu().numpy(),
+            "d_zero": (-self.d_mean / self.d_sd).detach().cpu().numpy(),
+        }
+
+        # Compile and sample the Stan model
+        self.model = CmdStanModel(stan_file=self._stan_file)
+        self.stan_fit = self.model.sample(
+            data=data,
+            chains=self.chains,
+            iter_warmup=self.warmup,
+            iter_sampling=self.samples,
+            seed=self.seed,
+        )
+
+        # Compute and de-standardize the posterior mean at zero discrepancy
+        self.c_zero = self.stan_fit.stan_variable("c_zero").mean(axis=0)
+        self.c_zero = (
+            self.c_zero * self.c_sd.detach().cpu().numpy() + self.c_mean.detach().cpu().numpy()
+        )
+
+    # Return the posterior mean at zero discrepancy
+    def _predict(self) -> torch.Tensor:
+        return torch.as_tensor(
+            self.c_zero,
+            device=self._device,
+            dtype=self._dtype,
+        )
 
 
 class NeuralRegression(Regressor):
