@@ -42,8 +42,8 @@ model {
     // Build the latent function covariance matrix
     matrix[S, S] covariance = gp_exp_quad_cov(D_vectors, signal_sd[j], length_scale);
 
-    // Add independent observation noise
-    covariance = add_diag(covariance, square(noise_sd[j]));
+    // Add independent observation noise and numerical jitter
+    covariance = add_diag(covariance, square(noise_sd[j]) + 1e-6);
 
     // Model the observed target coordinate
     C[, j] ~ multi_normal_cholesky(
@@ -71,8 +71,8 @@ generated quantities {
       length_scale
     );
 
-    // Add independent observation noise
-    covariance = add_diag(covariance, square(noise_sd[j]));
+    // Add independent observation noise and numerical jitter
+    covariance = add_diag(covariance, square(noise_sd[j]) + 1e-6);
 
     // Declare the conditional mean and variance at zero discrepancy
     real f_zero_mean;
