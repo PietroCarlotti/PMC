@@ -175,6 +175,7 @@ class GaussianProcess(Regressor):
         length_scale_prior_scale: float,
         signal_sd_prior_scale: float,
         noise_sd_prior_scale: float,
+        adapt_delta: float,
         seed: int | None = None,
     ):
         # Check that the chain count is an integer
@@ -221,6 +222,12 @@ class GaussianProcess(Regressor):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive")
 
+        # Check that the adaptation target is a finite probability
+        if isinstance(adapt_delta, bool) or not isinstance(adapt_delta, Real):
+            raise TypeError("adapt_delta must be a real number")
+        if not math.isfinite(adapt_delta) or not 0 < adapt_delta < 1:
+            raise ValueError("adapt_delta must be finite and strictly between 0 and 1")
+
         # Store the Stan sampling configuration and prior settings
         self.chains = chains
         self.warmup = warmup
@@ -229,6 +236,7 @@ class GaussianProcess(Regressor):
         self.length_scale_prior_scale = length_scale_prior_scale
         self.signal_sd_prior_scale = signal_sd_prior_scale
         self.noise_sd_prior_scale = noise_sd_prior_scale
+        self.adapt_delta = adapt_delta
         self.seed = seed
 
     def _standardize(self, d: torch.Tensor, c: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -286,6 +294,7 @@ class ExactGaussianProcess(GaussianProcess):
             chains=self.chains,
             iter_warmup=self.warmup,
             iter_sampling=self.samples,
+            adapt_delta=self.adapt_delta,
             seed=self.seed,
         )
 
@@ -312,6 +321,7 @@ class SparseGaussianProcess(GaussianProcess):
         signal_sd_prior_scale: float,
         noise_sd_prior_scale: float,
         num_inducing: int,
+        adapt_delta: float,
         seed: int | None = None,
     ):
         super().__init__(
@@ -322,6 +332,7 @@ class SparseGaussianProcess(GaussianProcess):
             length_scale_prior_scale,
             signal_sd_prior_scale,
             noise_sd_prior_scale,
+            adapt_delta,
             seed,
         )
 
@@ -384,6 +395,7 @@ class SparseGaussianProcess(GaussianProcess):
             chains=self.chains,
             iter_warmup=self.warmup,
             iter_sampling=self.samples,
+            adapt_delta=self.adapt_delta,
             seed=self.seed,
         )
 
