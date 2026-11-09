@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "product-monte-carlo"
-version = "0.1.13"
+version = "0.2.0"
 description = "Product Monte Carlo: Expectation Under a Product of Densities"
 readme = "README.md"
 requires-python = ">=3.10"
