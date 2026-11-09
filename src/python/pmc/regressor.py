@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from cmdstanpy import CmdStanModel
 from numbers import Integral, Real
 from pathlib import Path
+from sklearn.cluster import KMeans
 
 class Regressor(ABC):
     """Base class for regressors that learn E[h(C) | D = d]."""
@@ -163,10 +164,7 @@ class OLS(Regressor):
 
 
 class GaussianProcess(Regressor):
-    """Gaussian-process regression"""
-
-    # Locate the packaged Stan model
-    _stan_file = Path(__file__).parent / "stan" / "regressor_gaussian_process.stan"
+    """Base class for Gaussian-process regressors."""
 
     def __init__(
         self,
@@ -233,8 +231,7 @@ class GaussianProcess(Regressor):
         self.noise_sd_prior_scale = noise_sd_prior_scale
         self.seed = seed
 
-    # Fit the Gaussian process regression through Stan
-    def _fit(self, d: torch.Tensor, c: torch.Tensor) -> None:
+    def _standardize(self, d: torch.Tensor, c: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # Standardize the discrepancies
         self.d_mean = d.mean(dim=0)
         self.d_sd = d.std(dim=0, unbiased=False)
@@ -244,6 +241,27 @@ class GaussianProcess(Regressor):
         self.c_mean = c.mean(dim=0)
         self.c_sd = c.std(dim=0, unbiased=False)
         c = (c - self.c_mean) / self.c_sd
+
+        return d, c
+
+    # Return the posterior mean at zero discrepancy
+    def _predict(self) -> torch.Tensor:
+        return torch.as_tensor(
+            self.f_zero.mean(axis=0),
+            device=self._device,
+            dtype=self._dtype,
+        )
+
+
+class ExactGaussianProcess(GaussianProcess):
+    """Full Bayesian Gaussian-process regression."""
+
+    # Locate the packaged Stan model
+    _stan_file = Path(__file__).parent / "stan" / "regressor_exact_gaussian_process.stan"
+
+    # Fit the exact Gaussian process regression through Stan
+    def _fit(self, d: torch.Tensor, c: torch.Tensor) -> None:
+        d, c = self._standardize(d, c)
 
         # Assemble the Stan data
         data = {
@@ -275,17 +293,102 @@ class GaussianProcess(Regressor):
         self.f_zero = self.stan_fit.stan_variable("f_zero")
 
         # De-standardize the posterior samples of the latent function
-        self.f_zero = (
-            self.f_zero * self.c_sd.detach().cpu().numpy() + self.c_mean.detach().cpu().numpy()
+        self.f_zero = (self.f_zero * self.c_sd.detach().cpu().numpy() + self.c_mean.detach().cpu().numpy())
+
+
+class SparseGaussianProcess(GaussianProcess):
+    """Sparse Bayesian Gaussian-process regression."""
+
+    # Locate the packaged Stan model
+    _stan_file = Path(__file__).parent / "stan" / "regressor_sparse_gaussian_process.stan"
+
+    def __init__(
+        self,
+        chains: int,
+        warmup: int,
+        samples: int,
+        length_scale_prior_shape: float,
+        length_scale_prior_scale: float,
+        signal_sd_prior_scale: float,
+        noise_sd_prior_scale: float,
+        num_inducing: int,
+        seed: int | None = None,
+    ):
+        super().__init__(
+            chains,
+            warmup,
+            samples,
+            length_scale_prior_shape,
+            length_scale_prior_scale,
+            signal_sd_prior_scale,
+            noise_sd_prior_scale,
+            seed,
         )
 
-    # Return the posterior mean at zero discrepancy
-    def _predict(self) -> torch.Tensor:
-        return torch.as_tensor(
-            self.f_zero.mean(axis=0),
-            device=self._device,
-            dtype=self._dtype,
+        # Check that the inducing-point count is a positive integer
+        if isinstance(num_inducing, bool) or not isinstance(num_inducing, Integral):
+            raise TypeError("num_inducing must be an integer")
+        if num_inducing < 1:
+            raise ValueError("num_inducing must be at least 1")
+
+        self.num_inducing = num_inducing
+
+    def _select_inducing_points(self, d: torch.Tensor) -> torch.Tensor:
+        # Check that there are enough discrepancy draws
+        if self.num_inducing > d.shape[0]:
+            raise ValueError(
+                f"num_inducing must not exceed the number of draws, got "
+                f"num_inducing={self.num_inducing}, S={d.shape[0]}"
+            )
+
+        # Fit k-means to the standardized discrepancies
+        kmeans = KMeans(
+            n_clusters=self.num_inducing,
+            n_init="auto",
+            random_state=self.seed,
         )
+        centers = kmeans.fit(d.detach().cpu().numpy()).cluster_centers_
+
+        # Return the centers on the original tensor device and dtype
+        return torch.as_tensor(centers, device=d.device, dtype=d.dtype)
+
+    # Fit the sparse Gaussian process regression through Stan
+    def _fit(self, d: torch.Tensor, c: torch.Tensor) -> None:
+        d, c = self._standardize(d, c)
+
+        # Select and store the fixed inducing locations
+        self.inducing_points = self._select_inducing_points(d)
+
+        # Assemble the Stan data
+        data = {
+            "S": d.shape[0],
+            "m": self._m,
+            "r": self._r,
+            "num_inducing": self.num_inducing,
+            "D": d.detach().cpu().numpy(),
+            "C": c.detach().cpu().numpy(),
+            "Z": self.inducing_points.detach().cpu().numpy(),
+            "D_zero": (-self.d_mean / self.d_sd).detach().cpu().numpy(),
+            "length_scale_prior_shape": self.length_scale_prior_shape,
+            "length_scale_prior_scale": self.length_scale_prior_scale,
+            "signal_sd_prior_scale": self.signal_sd_prior_scale,
+            "noise_sd_prior_scale": self.noise_sd_prior_scale,
+        }
+
+        # Compile the Stan model
+        self.model = CmdStanModel(stan_file=self._stan_file)
+
+        # Sample from the Stan model
+        self.stan_fit = self.model.sample(
+            data=data,
+            chains=self.chains,
+            iter_warmup=self.warmup,
+            iter_sampling=self.samples,
+            seed=self.seed,
+        )
+
+        # Store the posterior samples of the latent function at zero discrepancy
+        self.f_zero = self.stan_fit.stan_variable("f_zero")
 
 
 class NeuralRegression(Regressor):
