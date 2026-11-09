@@ -390,6 +390,9 @@ class SparseGaussianProcess(GaussianProcess):
         # Store the posterior samples of the latent function at zero discrepancy
         self.f_zero = self.stan_fit.stan_variable("f_zero")
 
+        # De-standardize the posterior samples of the latent function
+        self.f_zero = self.f_zero * self.c_sd.detach().cpu().numpy() + self.c_mean.detach().cpu().numpy()
+
 
 class NeuralRegression(Regressor):
     """Base class for neural regressors."""
