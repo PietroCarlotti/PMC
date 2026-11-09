@@ -4,7 +4,7 @@ import torch
 
 from abc import ABC, abstractmethod
 from cmdstanpy import CmdStanModel
-from numbers import Integral
+from numbers import Integral, Real
 from pathlib import Path
 
 class Regressor(ABC):
@@ -168,7 +168,17 @@ class GaussianProcess(Regressor):
     # Locate the packaged Stan model
     _stan_file = Path(__file__).parent / "stan" / "regressor_gaussian_process.stan"
 
-    def __init__(self, chains: int, warmup: int, samples: int, seed: int | None = None):
+    def __init__(
+        self,
+        chains: int,
+        warmup: int,
+        samples: int,
+        length_scale_prior_shape: float,
+        length_scale_prior_scale: float,
+        signal_sd_prior_scale: float,
+        noise_sd_prior_scale: float,
+        seed: int | None = None,
+    ):
         # Check that the chain count is an integer
         if isinstance(chains, bool) or not isinstance(chains, Integral):
             raise TypeError("chains must be an integer")
@@ -201,10 +211,26 @@ class GaussianProcess(Regressor):
         if seed is not None and seed < 0:
             raise ValueError("seed must be nonnegative or None")
 
-        # Store the Stan sampling configuration
+        # Check that the prior settings are finite and positive
+        for name, value in (
+            ("length_scale_prior_shape", length_scale_prior_shape),
+            ("length_scale_prior_scale", length_scale_prior_scale),
+            ("signal_sd_prior_scale", signal_sd_prior_scale),
+            ("noise_sd_prior_scale", noise_sd_prior_scale),
+        ):
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise TypeError(f"{name} must be a real number")
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+
+        # Store the Stan sampling configuration and prior settings
         self.chains = chains
         self.warmup = warmup
         self.samples = samples
+        self.length_scale_prior_shape = length_scale_prior_shape
+        self.length_scale_prior_scale = length_scale_prior_scale
+        self.signal_sd_prior_scale = signal_sd_prior_scale
+        self.noise_sd_prior_scale = noise_sd_prior_scale
         self.seed = seed
 
     # Fit the Gaussian process regression through Stan
@@ -224,13 +250,19 @@ class GaussianProcess(Regressor):
             "S": d.shape[0],
             "m": self._m,
             "r": self._r,
-            "d": d.detach().cpu().numpy(),
-            "c": c.detach().cpu().numpy(),
-            "d_zero": (-self.d_mean / self.d_sd).detach().cpu().numpy(),
+            "D": d.detach().cpu().numpy(),
+            "C": c.detach().cpu().numpy(),
+            "D_zero": (-self.d_mean / self.d_sd).detach().cpu().numpy(),
+            "length_scale_prior_shape": self.length_scale_prior_shape,
+            "length_scale_prior_scale": self.length_scale_prior_scale,
+            "signal_sd_prior_scale": self.signal_sd_prior_scale,
+            "noise_sd_prior_scale": self.noise_sd_prior_scale,
         }
 
-        # Compile and sample the Stan model
+        # Compile the Stan model
         self.model = CmdStanModel(stan_file=self._stan_file)
+
+        # Sample from the Stan model
         self.stan_fit = self.model.sample(
             data=data,
             chains=self.chains,
@@ -239,16 +271,18 @@ class GaussianProcess(Regressor):
             seed=self.seed,
         )
 
-        # Compute and de-standardize the posterior mean at zero discrepancy
-        self.c_zero = self.stan_fit.stan_variable("c_zero").mean(axis=0)
-        self.c_zero = (
-            self.c_zero * self.c_sd.detach().cpu().numpy() + self.c_mean.detach().cpu().numpy()
+        # Store the posterior samples of the latent function at zero discrepancy
+        self.f_zero = self.stan_fit.stan_variable("f_zero")
+
+        # De-standardize the posterior samples of the latent function
+        self.f_zero = (
+            self.f_zero * self.c_sd.detach().cpu().numpy() + self.c_mean.detach().cpu().numpy()
         )
 
     # Return the posterior mean at zero discrepancy
     def _predict(self) -> torch.Tensor:
         return torch.as_tensor(
-            self.c_zero,
+            self.f_zero.mean(axis=0),
             device=self._device,
             dtype=self._dtype,
         )
