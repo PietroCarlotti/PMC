@@ -1,9 +1,14 @@
 # Import packages
 import math
+import gpytorch
+import pyro
 import torch
+from linear_operator.utils.errors import NanError, NotPSDError
 
 from abc import ABC, abstractmethod
-from numbers import Integral
+from numbers import Integral, Real
+from pyro.infer import MCMC, NUTS
+from pyro.ops.integrator import register_exception_handler
 
 class Regressor(ABC):
     """Base class for regressors that learn E[h(C) | D = d]."""
@@ -419,3 +424,258 @@ class CNN(NeuralRegression):
         net.bias = torch.nn.Parameter(torch.zeros(self._m))
         net.register_forward_pre_hook(lambda module, inputs: (inputs[0] + module.bias,))
         return net
+
+
+class _MPSGammaPrior(gpytorch.priors.GammaPrior):
+    """Sample Gamma priors on CPU when MPS lacks the Gamma sampler."""
+
+    def expand(self, batch_shape: torch.Size) -> "_MPSGammaPrior":
+        return _MPSGammaPrior(
+            self.concentration.expand(batch_shape), self.rate.expand(batch_shape)
+        )
+
+    def rsample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+        if self.concentration.device.type == "mps":
+            cpu_prior = torch.distributions.Gamma(
+                self.concentration.cpu(), self.rate.cpu()
+            )
+            return cpu_prior.rsample(sample_shape).to(self.concentration.device)
+        return super().rsample(sample_shape)
+
+
+class GaussianProcess(Regressor):
+    """Base class for Gaussian-process regressors of h(C) on D."""
+
+    @staticmethod
+    def _build_mean(mean: str) -> gpytorch.means.Mean:
+        if mean == "zero":
+            return gpytorch.means.ZeroMean()
+        raise ValueError(f"unsupported mean {mean!r}")
+
+    @staticmethod
+    def _build_kernel(
+        kernel: str,
+        lengthscale_prior_shape: float,
+        lengthscale_prior_scale: float,
+        signal_sd_prior_scale: float,
+    ) -> gpytorch.kernels.Kernel:
+        # Build the kernel
+        if kernel == "rbf":
+            # Build the base kernel
+            base_kernel = gpytorch.kernels.RBFKernel()
+
+            # Register the inverse lengthscale prior on the base kernel
+            base_kernel.register_prior(
+                "inverse_lengthscale_prior",
+                _MPSGammaPrior(lengthscale_prior_shape, lengthscale_prior_scale),
+                lambda module: module.lengthscale.reciprocal(),
+                lambda module, value: module.initialize(lengthscale=value.reciprocal()),
+            )
+        else:
+            raise ValueError(f"unsupported kernel {kernel!r}")
+
+        # Build the scale kernel
+        return gpytorch.kernels.ScaleKernel(
+            base_kernel,
+            outputscale_prior=_MPSGammaPrior(
+                0.5, 1 / (2 * signal_sd_prior_scale**2)
+            ),
+        )
+
+    @staticmethod
+    def _build_likelihood(
+        likelihood: str,
+        noise_sd_prior_scale: float,
+    ) -> gpytorch.likelihoods.Likelihood:
+        if likelihood == "gaussian":
+            return gpytorch.likelihoods.GaussianLikelihood(
+                noise_prior=_MPSGammaPrior(
+                    0.5, 1 / (2 * noise_sd_prior_scale**2)
+                ),
+                noise_constraint=gpytorch.constraints.Positive(),
+            )
+        raise ValueError(f"unsupported likelihood {likelihood!r}")
+
+    def __init__(
+        self,
+        mean: str,
+        kernel: str,
+        likelihood: str,
+        lengthscale_prior_shape: float,
+        lengthscale_prior_scale: float,
+        signal_sd_prior_scale: float,
+        noise_sd_prior_scale: float,
+    ):
+        """Build the chosen mean, kernel, and likelihood."""
+        self.mean_module = self._build_mean(mean)
+        self.covar_module = self._build_kernel(
+            kernel, lengthscale_prior_shape, lengthscale_prior_scale, signal_sd_prior_scale
+        )
+        self.likelihood = self._build_likelihood(likelihood, noise_sd_prior_scale)
+
+    def _standardize(self, d: torch.Tensor, c: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Standardize discrepancies and targets, retaining scales for prediction."""
+        # Standardize the discrepancies
+        self.d_mean = d.mean(dim=0)
+        self.d_sd = d.std(dim=0, unbiased=False)
+        self.d_sd = torch.where(self.d_sd > 0, self.d_sd, torch.ones_like(self.d_sd))
+
+        # Standardize the targets
+        self.c_mean = c.mean(dim=0)
+        self.c_sd = c.std(dim=0, unbiased=False)
+        self.c_sd = torch.where(self.c_sd > 0, self.c_sd, torch.ones_like(self.c_sd))
+
+        return (d - self.d_mean) / self.d_sd, (c - self.c_mean) / self.c_sd
+
+    def _unstandardize(self, c: torch.Tensor) -> torch.Tensor:
+        """Return standardized targets to their original scale."""
+        return c * self.c_sd + self.c_mean
+
+
+class _ExactGP(gpytorch.models.ExactGP):
+    """GPyTorch exact model for one target coordinate."""
+
+    def __init__(
+        self,
+        d: torch.Tensor,
+        c: torch.Tensor,
+        mean_module: gpytorch.means.Mean,
+        covar_module: gpytorch.kernels.Kernel,
+        likelihood: gpytorch.likelihoods.Likelihood,
+    ):
+        # Check that the likelihood is Gaussian
+        if not isinstance(likelihood, (gpytorch.likelihoods.GaussianLikelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood)):
+            raise TypeError("exact GP inference requires a Gaussian likelihood")
+
+        super().__init__(d, c, likelihood)
+        self.mean_module = mean_module
+        self.covar_module = covar_module
+
+    def forward(self, d: torch.Tensor) -> gpytorch.distributions.MultivariateNormal:
+        return gpytorch.distributions.MultivariateNormal(self.mean_module(d), self.covar_module(d))
+
+
+class ExactGaussianProcess(GaussianProcess):
+    """Exact GP regressor configured for Bayesian hyperparameter sampling."""
+
+    def __init__(
+        self,
+        mean: str,
+        kernel: str,
+        likelihood: str,
+        lengthscale_prior_shape: float,
+        lengthscale_prior_scale: float,
+        signal_sd_prior_scale: float,
+        noise_sd_prior_scale: float,
+        chains: int,
+        warmup: int,
+        samples: int,
+        adapt_delta: float,
+        seed: int | None,
+    ):
+        super().__init__(
+            mean, kernel, likelihood,
+            lengthscale_prior_shape, lengthscale_prior_scale,
+            signal_sd_prior_scale, noise_sd_prior_scale,
+        )
+
+        # Check that chains, warmup, and samples are positive integers
+        for name, value in (("chains", chains), ("warmup", warmup), ("samples", samples)):
+            if isinstance(value, bool) or not isinstance(value, Integral):
+                raise TypeError(f"{name} must be an integer")
+            if value < 1:
+                raise ValueError(f"{name} must be at least 1")
+
+        # Check that adapt_delta is a real number
+        if isinstance(adapt_delta, bool) or not isinstance(adapt_delta, Real):
+            raise TypeError("adapt_delta must be a real number")
+
+        # Check that adapt_delta is finite and strictly between 0 and 1
+        if not math.isfinite(adapt_delta) or not 0 < adapt_delta < 1:
+            raise ValueError("adapt_delta must be finite and strictly between 0 and 1")
+
+        # Check that seed is an integer or None
+        if seed is not None and (isinstance(seed, bool) or not isinstance(seed, Integral)):
+            raise TypeError("seed must be an integer or None")
+
+        self.chains = chains
+        self.warmup = warmup
+        self.samples = samples
+        self.adapt_delta = adapt_delta
+        self.seed = seed
+
+    def _fit(self, d: torch.Tensor, c: torch.Tensor) -> None:
+        # Check that there is only one target coordinate
+        if c.shape[1] != 1:
+            raise NotImplementedError("exact GP fitting currently supports one target coordinate")
+
+        # Reject NUTS proposals whose GP covariance is numerically invalid
+        register_exception_handler(
+            "gpytorch_invalid_covariance",
+            lambda error: isinstance(error, (NanError, NotPSDError)),
+            warn_on_overwrite=False,
+        )
+
+        # Standardize the discrepancies and targets
+        d, c = self._standardize(d, c)
+
+        # Build the exact GP model
+        self._model = _ExactGP(
+            d, c[:, 0], self.mean_module, self.covar_module, self.likelihood
+        ).to(device=d.device, dtype=d.dtype)
+
+        # Define the joint model for MCMC sampling
+        def joint_model() -> None:
+            sampled_model = self._model.pyro_sample_from_prior()
+            pyro.sample("obs", sampled_model.likelihood(sampled_model(d)), obs=c[:, 0])
+
+        # Run MCMC sampling
+        self._mcmc = []
+
+        # Run MCMC sampling for each chain
+        for chain in range(self.chains):
+            # Set the random seed for reproducibility if provided
+            if self.seed is not None:
+                pyro.set_rng_seed(self.seed + chain)
+
+            # Set up the NUTS kernel
+            nuts_kernel = NUTS(joint_model, target_accept_prob=self.adapt_delta)
+
+            # Set up the MCMC sampler
+            mcmc = MCMC(
+                nuts_kernel,
+                num_samples=self.samples,
+                warmup_steps=self.warmup,
+                num_chains=1,
+            )
+
+            # Run the MCMC sampler
+            with gpytorch.settings.fast_computations(False, False, False):
+                mcmc.run()
+            self._mcmc.append(mcmc)
+
+        # Concatenate the samples from all chains
+        chain_samples = [run.get_samples() for run in self._mcmc]
+        self._posterior_samples = {
+            name: torch.cat([draws[name] for draws in chain_samples], dim=0)
+            for name in chain_samples[0]
+        }
+
+        # Load the posterior samples into the model
+        self._model.pyro_load_from_samples(self._posterior_samples)
+
+        # Set the model to evaluation mode
+        self._model.eval()
+        self.f_zero_samples = None
+
+    def _predict(self) -> torch.Tensor:
+        if self.f_zero_samples is None:
+            # Draw f(0) for each retained hyperparameter draw
+            zero = (-self.d_mean / self.d_sd).reshape(1, 1, self._m)
+            zero = zero.expand(self.chains * self.samples, -1, -1)
+
+            # Evaluate the model at D = 0
+            with torch.no_grad(), gpytorch.settings.fast_computations(False, False, False):
+                self.f_zero_samples = self._unstandardize(self._model(zero).sample())
+
+        return self.f_zero_samples.mean(dim=0)

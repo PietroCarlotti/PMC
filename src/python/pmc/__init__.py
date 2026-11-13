@@ -2,7 +2,7 @@
 from .consensus import Consensus, Mean, WeightedAverage
 from .discrepancy import AnchoredDifferences, Discrepancy, Norm
 from .pmc import PMC
-from .regressor import CNN, MLP, NeuralRegression, OLS, Regressor
+from .regressor import CNN, ExactGaussianProcess, GaussianProcess, MLP, NeuralRegression, OLS, Regressor
 from .transform import (
     HadamardProduct,
     Identity,
@@ -20,6 +20,8 @@ __all__ = [
     "CNN",
     "Consensus",
     "Discrepancy",
+    "ExactGaussianProcess",
+    "GaussianProcess",
     "HadamardProduct",
     "Identity",
     "Indicator",
